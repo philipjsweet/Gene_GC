@@ -41,6 +41,9 @@ Now that we have the sequences in R, we need to clean up the descriptor informat
 df %>%
   mutate(seq_name = str_remove(seq_name, "lcl\\|")) %>% ## remove extra text
   mutate(seq_name = str_remove_all(seq_name, "\\]")) %>% ## remove "]"
+  mutate(seq_name = str_replace(seq_name, pattern = "\\[2Fe",  "2Fe")) %>% ## fix [2Fe-2Fe]
+  mutate(seq_name = str_replace(seq_name, pattern = "\\[Fe",  "Fe")) %>% ## fix [Fe
+  mutate(seq_name = str_replace(seq_name, pattern = "\\[acyl",  "acyl")) %>% ## fix [acyl
   separate(seq_name, sep = "\\[", into = c("ID","gene","locus_tag","db_ref","protein","protein_id","location","key")) %>% ## split up the descriptor info 
   separate(ID, into = c("Genome","Gene_ID"), sep = "_cds_", extra = "drop") %>% ## Split Genome and Gene Name
   mutate(location = str_replace(location, "location=","")) %>%
@@ -48,7 +51,9 @@ df %>%
   mutate(location = str_remove(location, "complement\\(")) %>%
   mutate(location = str_remove(location, "\\)")) %>%
   separate(location, into = c("start","end"), sep = "\\..") %>%
-  mutate(gene = str_remove(gene, "gene="))-> tidy_data
+  mutate(gene = str_remove(gene, "gene=")) %>%
+  filter(protein_id != "pseudo=true") %>%
+  filter(protein_id != "exception=ribosomal slippage")-> tidy_data
   
 head(tidy_data)
 
@@ -66,4 +71,53 @@ head(ecoli_GC)
 
 write.csv(ecoli_GC, output)
   
+```
+
+Figures showing all genes by GC content across the genome and by length 
+```{r summary}
+
+ecoli_GC %>%
+  ggplot(aes(x = fct_reorder(Gene_ID,start), y = GC)) +
+          geom_point() +
+  facet_wrap(~Genome, ncol = 1)
+
+ecoli_GC %>%
+  ggplot(aes(x = Genome, y = GC)) +
+          geom_boxplot()
+
+```
+
+Compare phage genes to rest of genomes
+
+```{r phage genes}
+
+ecoli_GC %>%
+    mutate(class = ifelse(grepl("phage",protein),"phage", "other")) %>%
+    mutate(class = ifelse(grepl("mobile",protein),'MGE',class)) %>% 
+  group_by(class) %>%
+  summarise(mean_GC = mean(GC, na.rm = TRUE), count = n())
+
+
+```
+
+What is class of outliers and messed up rows (w NA)
+
+```{r outliers}
+
+IQR(ecoli_GC$GC, na.rm = TRUE) -> gc_iqr
+
+median(ecoli_GC$GC, na.rm = TRUE) -> gc_median
+
+iqr_up = (gc_mean + 1.5*(gc_iqr))
+iqr_low = (gc_mean - 1.5*(gc_iqr))
+
+ecoli_GC %>%
+  filter(GC > iqr_up | GC < iqr_low) %>%
+  select(Gene_ID, gene, protein)
+
+ecoli_GC[is.na(ecoli_GC$GC), ] %>%
+  filter(!grepl('pseudo',protein_id)) %>%
+  filter(!grepl('ribosomal slippage',protein_id)) %>%
+  select(Gene_ID, gene)
+
 ```
