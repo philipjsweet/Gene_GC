@@ -1,0 +1,69 @@
+---
+title: "gene_seq_example"
+author: "Philip Sweet"
+date: "2023-06-22"
+output: html_document
+---
+
+This rmarkdown shows use a .faa to calculation of gene size and GC content using the biostrings package.
+
+We will use the E.coli file downloaded from NCBI on June 22 2023 for this example. 
+
+
+```{r setup, include=FALSE}
+
+## Load libraries
+
+library(Biostrings)
+library(tidyverse)
+
+## Read in data
+
+fastaFile <- readDNAStringSet("ecoli_seq.fasta")
+
+seq_name = names(fastaFile)
+sequence = paste(fastaFile)
+df <- data.frame(seq_name, sequence)
+
+head(df$seq_name, n =2)
+
+## Set variables 
+
+output <- c("Ecoli_GC.csv")
+
+```
+
+Now that we have the sequences in R, we need to clean up the descriptor information.
+
+
+```{r clean up}
+
+df %>%
+  mutate(seq_name = str_remove(seq_name, "lcl\\|")) %>% ## remove extra text
+  mutate(seq_name = str_remove_all(seq_name, "\\]")) %>% ## remove "]"
+  separate(seq_name, sep = "\\[", into = c("ID","gene","locus_tag","db_ref","protein","protein_id","location","key")) %>% ## split up the descriptor info 
+  separate(ID, into = c("Genome","Gene_ID"), sep = "_cds_", extra = "drop") %>% ## Split Genome and Gene Name
+  mutate(location = str_replace(location, "location=","")) %>%
+  mutate(strand = ifelse(grepl("complement",location),'-','+')) %>% ## mark gene direction
+  mutate(location = str_remove(location, "complement\\(")) %>%
+  mutate(location = str_remove(location, "\\)")) %>%
+  separate(location, into = c("start","end"), sep = "\\..") %>%
+  mutate(gene = str_remove(gene, "gene="))-> tidy_data
+  
+head(tidy_data)
+
+```
+
+```{r find length of GC}
+
+ecoli_GC <- tidy_data %>%
+  mutate(start = as.numeric(start)) %>%
+   mutate(end = as.numeric(end)) %>%
+  mutate(gene_length = (end - start)) %>%
+  mutate(GC = str_count(sequence, pattern = "G|C")/gene_length) ## count GC and divide by length
+
+head(ecoli_GC)
+
+write.csv(ecoli_GC, output)
+  
+```
